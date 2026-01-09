@@ -1,3 +1,4 @@
+import re
 from astrbot.api.star import Context, Star
 from astrbot.api.event import filter
 from astrbot.api import logger
@@ -24,31 +25,39 @@ class PasteEmojiPlugin(Star):
         # 2. 解析目标表情
         target_emoji = None
         
-        # 情况A：用户发送了系统黄豆表情
+        # 优先级A：检测是否包含系统黄豆表情 (Face组件)
         face_component = next((seg for seg in chain if isinstance(seg, Face)), None)
         if face_component:
             target_emoji = str(face_component.id)
-
-        # 情况B：用户发送了文本 (数字ID 或 Unicode表情)
+        
+        # 优先级B：解析纯文本内容
         if target_emoji is None:
-            raw_text = event.message_str.replace("/贴表情", "").strip()
-            if not raw_text:
-                 yield event.plain_result("❓ 请指定要贴的表情。")
-                 return
-            target_emoji = raw_text
-
-        # 3. 执行操作 (修复点)
-        try:
-            logger.info(f"贴表情: msg_id={reply.id}, emoji={target_emoji}")
+            # 获取纯文本
+            plain_text = event.get_plain_text().strip()
             
-            # 修复：使用 call_action，并直接传入关键字参数 (message_id=..., emoji_id=...)
-            # 不要传字典，也不要用 call_api (部分版本实现有问题)
+            # 使用正则去除指令部分 (支持 /贴表情, 贴表情, 带有空格等情况)
+            # 逻辑：匹配开头可选的斜杠 + 贴表情 + 可选的空格，替换为空
+            cleaned_text = re.sub(r'^/??贴表情\s*', '', plain_text).strip()
+            
+            if not cleaned_text:
+                 yield event.plain_result("❓ 请在指令后跟上一个表情(如: /贴表情 🔥)。")
+                 return
+            
+            # 取出剩余文本的第一个“单词”作为表情（防止误读后面的长句）
+            # 例如 "🔥 哈哈" -> "🔥"
+            target_emoji = cleaned_text.split()[0]
+
+        # 3. 执行操作
+        try:
+            logger.info(f"执行贴表情: msg_id={reply.id}, emoji={target_emoji}")
+            
+            # NapCat/LLOneBot 接口调用
             await event.bot.call_action(
                 "set_msg_emoji_like",
                 message_id=reply.id,
-                emoji_id=str(target_emoji)  # 确保是字符串，NapCat 支持 Unicode 字符
+                emoji_id=target_emoji
             )
             
         except Exception as e:
-            logger.error(f"贴表情失败: {e}")
-            yield event.plain_result(f"❌ 贴表情失败: {e}")
+            logger.error(f"贴表情异常: {e}")
+            yield event.plain_result(f"❌ 失败: {e}")
