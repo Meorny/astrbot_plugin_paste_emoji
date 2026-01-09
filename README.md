@@ -1,9 +1,14 @@
-# helloworld
+# astrbot_plugin_paste_emoji
 
-AstrBot 插件模板
+这是一个基于 AstrBot 框架的“贴表情”插件。
 
-A template plugin for AstrBot plugin feature
+# 指令：
+/贴表情
 
-# 支持
+# 获取引用：
+检查用户是否引用（回复）了某条消息。
 
-[帮助文档](https://astrbot.app)
+# 解析表情：
+如果用户输入的是系统表情（如QQ自带的黄豆表情），提取表情ID。
+如果用户输入的是数字（如 123），直接作为表情ID。
+如果用户输入的是 Unicode 表情（如 🐖），尝试直接传递给适配器（注：大部分 OneBot 实现仅支持 Integer 类型的系统表情ID，若输入 Unicode 可能会因协议限制而失败，但在代码逻辑上予以支持）。
