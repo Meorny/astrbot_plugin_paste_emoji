@@ -12,9 +12,7 @@ class PasteEmojiPlugin(Star):
     async def paste_emoji(self, event: AiocqhttpMessageEvent):
         """
         指令：/贴表情 [表情/ID]
-        支持：系统黄豆表情、emoji字符(🐉)、数字ID
         """
-        
         # 1. 获取引用消息
         chain = event.get_messages()
         reply = next((seg for seg in chain if isinstance(seg, Reply)), None)
@@ -26,10 +24,10 @@ class PasteEmojiPlugin(Star):
         # 2. 解析目标表情
         target_emoji = None
         
-        # 情况A：用户发送了系统黄豆表情 (Face组件)
+        # 情况A：用户发送了系统黄豆表情
         face_component = next((seg for seg in chain if isinstance(seg, Face)), None)
         if face_component:
-            target_emoji = str(face_component.id) # 转为字符串以防万一
+            target_emoji = str(face_component.id)
 
         # 情况B：用户发送了文本 (数字ID 或 Unicode表情)
         if target_emoji is None:
@@ -39,16 +37,16 @@ class PasteEmojiPlugin(Star):
                  return
             target_emoji = raw_text
 
-        # 3. 执行操作
-        # 注意：这里我们使用 call_api 直接调用，绕过 AstrBot 可能存在的 int 类型检查
-        # NapCat 对 set_msg_emoji_like 的 emoji_id 字段定义为 string 类型，支持 unicode
+        # 3. 执行操作 (修复点)
         try:
             logger.info(f"贴表情: msg_id={reply.id}, emoji={target_emoji}")
             
-            await event.bot.call_api(
+            # 修复：使用 call_action，并直接传入关键字参数 (message_id=..., emoji_id=...)
+            # 不要传字典，也不要用 call_api (部分版本实现有问题)
+            await event.bot.call_action(
                 "set_msg_emoji_like",
                 message_id=reply.id,
-                emoji_id=target_emoji  # 直接传 "🐉" 或 "123"
+                emoji_id=str(target_emoji)  # 确保是字符串，NapCat 支持 Unicode 字符
             )
             
         except Exception as e:
