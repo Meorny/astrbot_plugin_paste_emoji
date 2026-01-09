@@ -12,60 +12,45 @@ class PasteEmojiPlugin(Star):
     async def paste_emoji(self, event: AiocqhttpMessageEvent):
         """
         指令：/贴表情 [表情/ID]
-        功能：将指定的表情贴到引用的消息上
+        支持：系统黄豆表情、emoji字符(🐉)、数字ID
         """
         
-        # 1. 获取消息链和引用对象
+        # 1. 获取引用消息
         chain = event.get_messages()
         reply = next((seg for seg in chain if isinstance(seg, Reply)), None)
 
         if not reply:
-            # 如果没有引用消息，提示用户
-            yield event.plain_result("❌ 请先引用(回复)一条消息，然后再发送此指令。")
+            yield event.plain_result("❌ 请先引用(回复)一条消息。")
             return
 
-        # 2. 解析用户想要贴的表情 ID
-        target_emoji_id = None
+        # 2. 解析目标表情
+        target_emoji = None
         
-        # 优先检测：用户是否发送了系统表情组件 (Face)
-        # 例如：/贴表情 [某个黄豆表情]
+        # 情况A：用户发送了系统黄豆表情 (Face组件)
         face_component = next((seg for seg in chain if isinstance(seg, Face)), None)
         if face_component:
-            target_emoji_id = face_component.id
+            target_emoji = str(face_component.id) # 转为字符串以防万一
 
-        # 次级检测：解析纯文本参数
-        # 例如：/贴表情 123  或者  /贴表情 🐖
-        if target_emoji_id is None:
-            # 获取去除指令后的纯文本内容
+        # 情况B：用户发送了文本 (数字ID 或 Unicode表情)
+        if target_emoji is None:
             raw_text = event.message_str.replace("/贴表情", "").strip()
-            
             if not raw_text:
-                 yield event.plain_result("❓ 请在指令后跟上一个表情或表情ID。")
+                 yield event.plain_result("❓ 请指定要贴的表情。")
                  return
+            target_emoji = raw_text
 
-            if raw_text.isdigit():
-                # 如果是纯数字，转为 int (OneBot 标准协议通常只支持 int 类型的 ID)
-                target_emoji_id = int(raw_text)
-            else:
-                # 如果是 Unicode 字符 (如 🐖) 或其他文本
-                # 注意：标准的 OneBot v11 协议 set_msg_emoji_like 通常只接受 int 类型的系统表情 ID
-                # 这里尝试直接透传，取决于底层适配器(LLOneBot/Lagrange/Go-CQHTTP)是否支持
-                target_emoji_id = raw_text
-
-        # 3. 执行贴表情操作
+        # 3. 执行操作
+        # 注意：这里我们使用 call_api 直接调用，绕过 AstrBot 可能存在的 int 类型检查
+        # NapCat 对 set_msg_emoji_like 的 emoji_id 字段定义为 string 类型，支持 unicode
         try:
-            logger.info(f"尝试对消息 {reply.id} 贴表情: {target_emoji_id}")
+            logger.info(f"贴表情: msg_id={reply.id}, emoji={target_emoji}")
             
-            # 调用核心 API
-            await event.bot.set_msg_emoji_like(
+            await event.bot.call_api(
+                "set_msg_emoji_like",
                 message_id=reply.id,
-                emoji_id=target_emoji_id,
-                set=True
+                emoji_id=target_emoji  # 直接传 "🐉" 或 "123"
             )
-            
-            # 可选：操作成功后不回复任何内容，或者回一个简单的确认
-            # yield event.plain_result("✅") 
             
         except Exception as e:
             logger.error(f"贴表情失败: {e}")
-            yield event.plain_result(f"❌ 贴表情失败：适配器可能不支持该类型表情或ID。\n错误信息: {e}")
+            yield event.plain_result(f"❌ 贴表情失败: {e}")
