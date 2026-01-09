@@ -12,7 +12,7 @@ class PasteEmojiPlugin(Star):
     @filter.command("贴表情")
     async def paste_emoji(self, event: AiocqhttpMessageEvent):
         """
-        指令：/贴表情 [表情/ID]
+        指令：/贴表情 [表情/ID/字符]
         """
         # 1. 获取引用消息
         chain = event.get_messages()
@@ -26,32 +26,35 @@ class PasteEmojiPlugin(Star):
         target_emoji = None
         
         # 优先级A：检测是否包含系统黄豆表情 (Face组件)
+        # 例如：/贴表情 [菜刀] -> 提取出 ID
         face_component = next((seg for seg in chain if isinstance(seg, Face)), None)
         if face_component:
             target_emoji = str(face_component.id)
         
-        # 优先级B：解析纯文本内容
+        # 优先级B：解析纯文本内容 (适用于 /贴表情 🔥 或 /贴表情 123)
         if target_emoji is None:
-            # 获取纯文本
-            plain_text = event.get_plain_text().strip()
+            # 【修复点】使用 message_str 替代 get_plain_text()
+            plain_text = event.message_str
             
-            # 使用正则去除指令部分 (支持 /贴表情, 贴表情, 带有空格等情况)
-            # 逻辑：匹配开头可选的斜杠 + 贴表情 + 可选的空格，替换为空
-            cleaned_text = re.sub(r'^/??贴表情\s*', '', plain_text).strip()
-            
-            if not cleaned_text:
-                 yield event.plain_result("❓ 请在指令后跟上一个表情(如: /贴表情 🔥)。")
-                 return
-            
-            # 取出剩余文本的第一个“单词”作为表情（防止误读后面的长句）
-            # 例如 "🔥 哈哈" -> "🔥"
-            target_emoji = cleaned_text.split()[0]
+            if plain_text:
+                # 使用正则去除指令部分
+                # 匹配模式：开头(^)、可选斜杠(/?)、贴表情、可选空格(\s*)
+                cleaned_text = re.sub(r'^/??贴表情\s*', '', plain_text).strip()
+                
+                if cleaned_text:
+                    # 取出剩余文本的第一个“单词”作为表情
+                    # 这里的 split()[0] 可以防止把 "🔥 哈哈" 整个当成表情ID
+                    target_emoji = cleaned_text.split()[0]
+
+        if not target_emoji:
+             yield event.plain_result("❓ 未检测到表情，请发送：/贴表情 🔥 或 /贴表情 [表情]")
+             return
 
         # 3. 执行操作
         try:
             logger.info(f"执行贴表情: msg_id={reply.id}, emoji={target_emoji}")
             
-            # NapCat/LLOneBot 接口调用
+            # 使用 call_action 且必须使用关键字参数传参
             await event.bot.call_action(
                 "set_msg_emoji_like",
                 message_id=reply.id,
